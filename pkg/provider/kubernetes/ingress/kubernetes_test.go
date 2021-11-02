@@ -812,6 +812,44 @@ func TestLoadConfigurationFromIngresses(t *testing.T) {
 			},
 		},
 		{
+			desc: "TLS support without annotation",
+			expected: &dynamic.Configuration{
+				TCP: &dynamic.TCPConfiguration{},
+				HTTP: &dynamic.HTTPConfiguration{
+					Middlewares: map[string]*dynamic.Middleware{},
+					Routers: map[string]*dynamic.Router{
+						"testing-example-com": {
+							Rule:    "Host(`example.com`)",
+							Service: "testing-example-com-80",
+							TLS:     &dynamic.RouterTLSConfig{},
+						},
+					},
+					Services: map[string]*dynamic.Service{
+						"testing-example-com-80": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								PassHostHeader: Bool(true),
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.11.0.1:80",
+									},
+								},
+							},
+						},
+					},
+				},
+				TLS: &dynamic.TLSConfiguration{
+					Certificates: []*tls.CertAndStores{
+						{
+							Certificate: tls.Certificate{
+								CertFile: tls.FileOrContent("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"),
+								KeyFile:  tls.FileOrContent("-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			desc: "Ingress with a basic rule on one path with https (port == 443)",
 			expected: &dynamic.Configuration{
 				TCP: &dynamic.TCPConfiguration{},
@@ -1817,11 +1855,12 @@ func TestGetCertificates(t *testing.T) {
 	)
 
 	testCases := []struct {
-		desc      string
-		ingress   *networkingv1.Ingress
-		client    Client
-		result    map[string]*tls.CertAndStores
-		errResult string
+		desc        string
+		ingress     *networkingv1.Ingress
+		client      Client
+		result      map[string]*tls.CertAndStores
+		errResult   string
+		foundResult bool
 	}{
 		{
 			desc:    "api client returns error",
@@ -1941,6 +1980,7 @@ func TestGetCertificates(t *testing.T) {
 					},
 				},
 			},
+			foundResult: true,
 		},
 		{
 			desc:    "return nil when no secret is defined",
@@ -1956,8 +1996,9 @@ func TestGetCertificates(t *testing.T) {
 			t.Parallel()
 
 			tlsConfigs := map[string]*tls.CertAndStores{}
-			err := getCertificates(context.Background(), test.ingress, test.client, tlsConfigs)
+			found, err := getCertificates(context.Background(), test.ingress, test.client, tlsConfigs)
 
+			assert.Equal(t, found, test.foundResult)
 			if test.errResult != "" {
 				assert.EqualError(t, err, test.errResult)
 			} else {
